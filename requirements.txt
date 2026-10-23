@@ -1,0 +1,5 @@
+flask>=3.0
+openai>=1.30
+playwright>=1.44
+python-dotenv>=1.0
+requests>=2.31

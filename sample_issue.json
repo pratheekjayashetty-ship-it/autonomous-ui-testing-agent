@@ -1,0 +1,6 @@
+{
+  "number": 1,
+  "title": "Add task creation and completion functionality",
+  "labels": ["Ready for QA"],
+  "body": "Acceptance Criteria:\n1. A user can add a non-empty task.\n2. The new task is visible in the task list.\n3. A user can mark a task as completed and the UI visibly indicates completion.\n4. Empty task names are rejected with a validation message."
+}
