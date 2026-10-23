@@ -1,0 +1,58 @@
+{
+  "summary": "Add task creation and completion functionality",
+  "scenarios": [
+    {
+      "id": "1",
+      "criterion": "A user can add a non-empty task.",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "taskInput",
+          "value": "Buy milk"
+        },
+        {
+          "action": "click",
+          "target": "addButton"
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "Buy milk"
+      }
+    },
+    {
+      "id": "2",
+      "criterion": "A user can mark a task as completed and the UI visibly indicates completion.",
+      "steps": [
+        {
+          "action": "click",
+          "target": "taskCheckbox",
+          "value": "Buy milk"
+        }
+      ],
+      "verification": {
+        "kind": "completed_task",
+        "expected": true
+      }
+    },
+    {
+      "id": "3",
+      "criterion": "Empty task names are rejected with a validation message.",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "taskInput",
+          "value": ""
+        },
+        {
+          "action": "click",
+          "target": "addButton"
+        }
+      ],
+      "verification": {
+        "kind": "validation_message",
+        "expected": "Task name cannot be empty"
+      }
+    }
+  ]
+}
