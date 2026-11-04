@@ -11,9 +11,9 @@ independently verifies observable outcomes, and saves reports and screenshots.
 - **Generic planning/execution:** planner instructions contain no app-specific
   selectors or credentials. Test data must come from the issue. Browser actions
   use accessible names, labels, visible context, and observed link destinations.
-- **Failure reporting:** the fixture includes a product-image consistency
-  acceptance criterion using SauceDemo's `problem_user` account. It is reported
-  as a defect only if the observed page actually violates the criterion.
+- **Failure reporting:** the fixture includes a `problem_user` add-to-cart
+  regression for the Sauce Labs Bolt T-Shirt. A defect is reported only when
+  the click completes but the expected `Remove` label is not visible.
 - **Unit tests:** pytest tests cover plan validation, issue fixture loading, and
   report aggregation.
 
@@ -21,8 +21,7 @@ independently verifies observable outcomes, and saves reports and screenshots.
 
 - Python 3.11+
 - Google Chrome installed (the runner uses Playwright `channel="chrome"`)
-- Groq or another compatible API key/model that supports JSON Schema structured
-  output
+- Groq or another OpenAI-compatible chat-completions API key/model
 - Network access to the public application and API
 
 ## Setup (Windows Git Bash)
@@ -73,12 +72,12 @@ Otherwise, it loads `sample_issue.json`.
 
 The sample fixture specifies:
 - standard account for successful login
-- invalid account for negative login
-- Sauce Labs Backpack as the cart item
-- problem_user for an image-consistency defect check
-
+- invalid account and exact expected error message for negative login
+- Sauce Labs Backpack for add-to-cart and cart-content checks
+- `problem_user` credentials for the Bolt T-Shirt add-to-cart regression
 The issue must state all test values and expected outcomes. The agent does not
-guess passwords, error messages, or product names.
+guess passwords, error messages, or product names. The planner requires one
+scenario for each numbered acceptance criterion and rejects incomplete plans.
 
 ## Execution and guardrails
 

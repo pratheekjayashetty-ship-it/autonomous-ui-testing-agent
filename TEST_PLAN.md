@@ -31,13 +31,13 @@ and reports outcomes based on independent browser observations.
   defects.
 
 ## Public target and defect demonstration
-The sample issue targets the public SauceDemo storefront. It includes standard
-and invalid login test data, a cart workflow for Sauce Labs Backpack, and an
-image-consistency check using the `problem_user` demo account. The image scenario
-is considered a defect only if the live page observation shows duplicate image
-sources for distinct labelled products. A test run must capture its screenshot
+The sample issue targets the public SauceDemo storefront. It includes separate
+valid-login and invalid-login criteria, a cart workflow for Sauce Labs Backpack,
+and a `problem_user` regression for adding the Sauce Labs Bolt T-Shirt. The
+regression expects the product button to change from `Add to cart` to `Remove`.
+It is considered a defect only when the browser actions complete but independent
+verification cannot observe `Remove`. A test run must capture its screenshot
 and report before a defect claim is made.
-
 ## Unit tests
 `pytest` tests validate planner input constraints, rejection of invented
 credentials, fixture loading, and report aggregation. Browser integration tests

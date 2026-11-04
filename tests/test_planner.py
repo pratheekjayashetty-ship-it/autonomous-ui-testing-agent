@@ -48,3 +48,19 @@ def test_rejects_unsupported_verification():
     plan["scenarios"][0]["verification"]["kind"] = "guess"
     with pytest.raises(ValueError, match="Unsupported verification"):
         validate_plan(plan, ISSUE)
+
+
+def test_rejects_plan_that_omits_an_acceptance_criterion():
+    issue_with_two_criteria = {
+        "title": "Login coverage",
+        "body": (
+            "## Acceptance Criteria\n"
+            "1. Valid credentials allow login.\n"
+            "2. Invalid credentials show an error.\n"
+        ),
+    }
+
+    with pytest.raises(
+        ValueError, match="exactly one scenario per numbered acceptance criterion"
+    ):
+        validate_plan(valid_plan(), issue_with_two_criteria)

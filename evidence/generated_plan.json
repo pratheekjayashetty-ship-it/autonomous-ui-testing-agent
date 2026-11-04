@@ -1,9 +1,9 @@
 {
-  "summary": "Test SauceDemo login and shopping cart functionality",
+  "summary": "Test plan for SauceDemo login and shopping cart",
   "scenarios": [
     {
       "id": "TC1",
-      "criterion": "Valid login with standard_user and secret_sauce should display Products page",
+      "criterion": "Valid login - Username: standard_user - Password: secret_sauce - Verify that the Products page is displayed.",
       "steps": [
         {
           "action": "fill",
@@ -28,7 +28,32 @@
     },
     {
       "id": "TC2",
-      "criterion": "Add Sauce Labs Backpack to cart after valid login; cart count becomes 1",
+      "criterion": "Invalid login - Username: invalid_user - Password: wrong_password - Verify that this exact error message is displayed: Epic sadface: Username and password do not match any user in this service",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "invalid_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "wrong_password"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "validation_message",
+        "expected": "Epic sadface: Username and password do not match any user in this service"
+      }
+    },
+    {
+      "id": "TC3",
+      "criterion": "Add product to cart - Log in using valid credentials. - Add Sauce Labs Backpack to the cart. - Verify that the cart count becomes 1.",
       "steps": [
         {
           "action": "fill",
@@ -57,8 +82,8 @@
       }
     },
     {
-      "id": "TC3",
-      "criterion": "After adding Sauce Labs Backpack to cart, opening cart displays the product",
+      "id": "TC4",
+      "criterion": "Cart display - Log in using valid credentials in an independent browser session. - Add Sauce Labs Backpack to the cart. - Open the cart. - Verify that Sauce Labs Backpack is displayed.",
       "steps": [
         {
           "action": "fill",
@@ -92,8 +117,8 @@
       }
     },
     {
-      "id": "TC4",
-      "criterion": "Problem user can add Sauce Labs Bolt T-Shirt to cart; button changes to Remove",
+      "id": "TC5",
+      "criterion": "Problem user \u2013 Add-to-cart regression - Username: problem_user - Password: secret_sauce - Log in using the supplied credentials. - Locate Sauce Labs Bolt T-Shirt. - Click its associated Add to cart button. - Verify that its button label changes to Remove. - Report FAILED if the action completes but Remove is not visible.",
       "steps": [
         {
           "action": "fill",

@@ -1,4 +1,5 @@
 import json
+import re
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -20,8 +21,8 @@ or application-specific control.
 
 Use only acceptance criteria and test data explicitly supplied in the issue.
 Never invent credentials, expected messages, product names, or requirements.
-If required test data is missing, do not fabricate it: create a scenario that
-fails closed with a clear explanation in its criterion, or omit that scenario.
+If required test data is missing, do not fabricate it. Keep the acceptance
+criterion represented and make its scenario fail closed with a clear explanation.
 
 For every scenario provide: id, criterion, steps, verification.
 Allowed actions: fill, click. A fill requires target and exact value.
@@ -37,9 +38,21 @@ Do not use CSS selectors, XPath, element IDs, or invented selectors.
 
 Scenario independence:
 - Every scenario runs in a fresh browser context.
-- Include all required setup actions in each scenario (for example, login and
-  adding an item before opening a cart).
+- Include all required setup actions in each scenario (for example, filling
+  username and password, submitting login, and adding an item before opening
+  a cart).
+- For login, include separate fill actions for the exact username and password
+  supplied in the issue, followed by a login/sign-in action.
+- For add-to-cart criteria, target the product action in its visible context,
+  for example "visible product name | Add to cart". Do not use a generic
+  "Add to cart" target when multiple products may be present.
+- For cart-display criteria, add the requested product and open the cart in
+  that same scenario before verifying its visible content.
 - Do not rely on state created by a previous scenario.
+- Create exactly one separate scenario for every numbered acceptance criterion
+  in the issue's Acceptance Criteria section, preserving the original order.
+- Do not merge, omit, or silently skip criteria, including negative-login and
+  defect-regression criteria.
 - Keep each scenario within 8 actions.
 - Do not add unnecessary steps.
 
@@ -104,6 +117,174 @@ PLAN_SCHEMA = {
 }
 
 
+def _extract_acceptance_criteria(issue: dict) -> list[dict]:
+    """Return top-level numbered acceptance criteria and their supporting text."""
+    body = issue.get("body", "") or ""
+    in_section = False
+    criteria = []
+    current = None
+
+    for line in body.splitlines():
+        if re.match(r"^\s{0,3}#{1,6}\s+acceptance criteria\b", line, re.IGNORECASE):
+            in_section = True
+            continue
+        if in_section and re.match(r"^\s{0,3}#{1,6}\s+\S", line):
+            break
+        if not in_section:
+            continue
+
+        match = re.match(r"^\s{0,3}\d+[.)]\s+(.+?)\s*$", line)
+        if match:
+            if current is not None:
+                current["body"] = "\n".join(current.pop("lines")).strip()
+                criteria.append(current)
+            current = {"title": match.group(1).strip(), "lines": []}
+        elif current is not None:
+            current["lines"].append(line)
+
+    if current is not None:
+        current["body"] = "\n".join(current.pop("lines")).strip()
+        criteria.append(current)
+    return criteria
+
+
+def _extract_login_credentials(text: str) -> dict[str, str]:
+    """Extract explicitly supplied Username/Password values from criterion text."""
+    credentials = {}
+    for line in text.splitlines():
+        match = re.match(
+            r"^\s{0,8}(?:[-*+]\s*)?(username|password)\s*(?::|=|\s)\s*(.*?)\s*$",
+            line,
+            re.IGNORECASE,
+        )
+        if match:
+            value = match.group(2).strip().strip("`'\"")
+            if value:
+                credentials[match.group(1).casefold()] = value
+    return credentials
+
+
+def _is_login_criterion(text: str) -> bool:
+    return bool(re.search(r"\b(log\s*in|login|sign\s*in|authenticate)\b", text, re.IGNORECASE))
+
+
+def _reference_credentials(criteria: list[dict], invalid: bool) -> dict[str, str]:
+    """Find a credential pair from a clearly labelled valid/invalid login criterion."""
+    desired = (
+        r"\b(invalid|wrong|incorrect|negative)\b"
+        if invalid else r"\b(valid|successful|successfully)\b"
+    )
+    for item in criteria:
+        text = item["title"] + "\n" + item["body"]
+        if re.search(desired, text, re.IGNORECASE):
+            values = _extract_login_credentials(item["body"])
+            if {"username", "password"}.issubset(values):
+                return values
+    return {}
+
+
+def _extract_product_contexts(criterion_body: str) -> list[str]:
+    """Extract product names from simple acceptance-criterion action bullets."""
+    products = []
+    for line in criterion_body.splitlines():
+        clean = re.sub(r"^\s{0,8}[-*+]\s*", "", line).strip()
+        match = re.match(r"(?:add|locate|select)\s+(.+?)\s*$", clean, re.IGNORECASE)
+        if not match:
+            continue
+        candidate = re.split(
+            r"\s+(?:to\s+(?:the\s+)?cart|and\s+then|then)\b",
+            match.group(1), maxsplit=1, flags=re.IGNORECASE,
+        )[0].strip(" .:`'\"")
+        if candidate.casefold() in {"item", "product", "the item", "the product"}:
+            continue
+        if candidate and candidate.casefold() not in {p.casefold() for p in products}:
+            products.append(candidate)
+    return products
+
+
+def _validate_scenario_actions(scenario: dict, criterion: dict, criteria: list[dict]) -> None:
+    """Reject plans that omit explicit login, product, or cart setup actions."""
+    sid = scenario["id"]
+    text = criterion["title"] + "\n" + criterion["body"]
+    steps = scenario["steps"]
+    fills = [step for step in steps if step["action"] == "fill"]
+    clicks = [step for step in steps if step["action"] == "click"]
+
+    explicit_credentials = _extract_login_credentials(criterion["body"])
+    if _is_login_criterion(text) or {"username", "password"}.issubset(explicit_credentials):
+        credentials = explicit_credentials
+        if not {"username", "password"}.issubset(credentials):
+            invalid = bool(re.search(r"\b(invalid|wrong|incorrect|negative)\b", text, re.IGNORECASE))
+            credentials = _reference_credentials(criteria, invalid)
+        if not {"username", "password"}.issubset(credentials):
+            raise ValueError(
+                f"Scenario {sid} requires login, but the issue does not provide "
+                "a complete username/password pair to use"
+            )
+
+        for field in ("username", "password"):
+            expected_value = credentials[field].casefold()
+            matching = [step for step in fills if step["value"].casefold() == expected_value]
+            if not matching:
+                raise ValueError(
+                    f"Scenario {sid} is missing a fill action for the supplied {field}"
+                )
+            label_terms = (
+                ("username", "user name", "user id", "email")
+                if field == "username" else ("password",)
+            )
+            if not any(
+                any(term in step["target"].casefold() for term in label_terms)
+                for step in matching
+            ):
+                raise ValueError(
+                    f"Scenario {sid} must fill the {field} value using a matching "
+                    "accessible field label"
+                )
+        if not any(
+            re.search(r"\b(login|log in|sign in|submit)\b", step["target"], re.IGNORECASE)
+            for step in clicks
+        ):
+            raise ValueError(
+                f"Scenario {sid} requires a login/sign-in button click after filling credentials"
+            )
+
+    products = _extract_product_contexts(criterion["body"])
+    # Any explicit product action in the criterion needs a product-context target.
+    add_to_cart_required = bool(products) and bool(
+        re.search(r"\b(cart|basket)\b", text, re.IGNORECASE)
+        or re.search(r"\b(add|adding|locate|select)\b", text, re.IGNORECASE)
+    )
+    if add_to_cart_required and products:
+        for product in products:
+            matched = any(
+                product.casefold() in step["target"].casefold()
+                and re.search(r"\badd\b", step["target"], re.IGNORECASE)
+                and re.search(r"\b(cart|basket)\b", step["target"], re.IGNORECASE)
+                for step in clicks
+            )
+            if not matched:
+                raise ValueError(
+                    f"Scenario {sid} must target the add-to-cart action in the "
+                    f"visible context of product {product!r}"
+                )
+
+    opens_cart = bool(re.search(
+        r"\b(open|view|go to|navigate to)\s+(?:the\s+)?(?:shopping\s+)?cart\b",
+        text, re.IGNORECASE,
+    ))
+    if opens_cart and not any(
+        re.search(r"\b(cart|basket)\b", step["target"], re.IGNORECASE)
+        and not re.search(r"\badd\b", step["target"], re.IGNORECASE)
+        for step in clicks
+    ):
+        raise ValueError(f"Scenario {sid} must include a click on the cart control")
+
+
+def _count_numbered_acceptance_criteria(issue: dict) -> int:
+    return len(_extract_acceptance_criteria(issue))
+
+
 def validate_plan(plan, issue):
     if not isinstance(plan, dict):
         raise ValueError("Generated plan must be a JSON object")
@@ -111,9 +292,24 @@ def validate_plan(plan, issue):
     if not isinstance(scenarios, list) or not 1 <= len(scenarios) <= MAX_SCENARIOS:
         raise ValueError(f"Plan must contain between 1 and {MAX_SCENARIOS} scenarios")
 
+    acceptance_criteria = _extract_acceptance_criteria(issue)
+    required_criteria_count = len(acceptance_criteria)
+    if required_criteria_count:
+        if required_criteria_count > MAX_SCENARIOS:
+            raise ValueError(
+                f"Issue has {required_criteria_count} numbered acceptance criteria, "
+                f"but the planner limit is {MAX_SCENARIOS} scenarios"
+            )
+        if len(scenarios) != required_criteria_count:
+            raise ValueError(
+                "Plan must include exactly one scenario per numbered acceptance "
+                f"criterion: found {len(scenarios)} scenarios for "
+                f"{required_criteria_count} criteria"
+            )
+
     issue_text = (issue.get("title", "") + "\n" + issue.get("body", "")).casefold()
     seen = set()
-    for scenario in scenarios:
+    for scenario_index, scenario in enumerate(scenarios):
         if not isinstance(scenario, dict):
             raise ValueError("Each scenario must be an object")
         sid = scenario.get("id")
@@ -146,6 +342,11 @@ def validate_plan(plan, issue):
             elif value is not None:
                 raise ValueError(f"Click step in {sid} must have value=null")
 
+        if acceptance_criteria:
+            _validate_scenario_actions(
+                scenario, acceptance_criteria[scenario_index], acceptance_criteria
+            )
+
         verification = scenario.get("verification")
         if not isinstance(verification, dict):
             raise ValueError(f"Scenario {sid} requires verification")
@@ -155,15 +356,13 @@ def validate_plan(plan, issue):
         if not isinstance(expected, str) or not expected.strip():
             raise ValueError(f"Scenario {sid} has empty verification expected value")
 
-        placeholder_values = {
-            "product name",
-            "expected result",
-            "some text",
-            "placeholder",
-            "todo",
-            "tbd",
-        }
-        if expected.strip().casefold() in placeholder_values:
+        normalized_expected = re.sub(r"[^a-z0-9]+", " ", expected.casefold()).strip()
+        placeholder_phrases = (
+            "product name", "expected result", "some text", "placeholder",
+            "todo", "tbd", "cannot verify due to missing data", "cannot verify",
+            "missing data", "not specified", "unknown", "n a",
+        )
+        if any(phrase in normalized_expected for phrase in placeholder_phrases):
             raise ValueError(
                 f"Placeholder verification expected value "
                 f"for scenario {sid}: {expected!r}"
@@ -296,11 +495,24 @@ def make_plan(issue, client, model: str):
         "Return exactly one complete JSON object, with no Markdown fences "
         "and no text before or after it.\n"
         "Required top-level keys: summary and scenarios.\n"
+        "Generate exactly one separate scenario for every numbered acceptance "
+        "criterion in the Acceptance Criteria section, preserving order. Do "
+        "not omit or combine criteria; include negative-login and defect tests.\n"
         "Every scenario must contain id, criterion, steps, and verification.\n"
         "Every step must contain action, target, and value. For click actions, "
         "value must be null. For fill actions, value must be a string copied "
         "exactly from the issue.\n"
-        "Every verification must contain kind and expected.\n"
+        "Every verification must contain kind and expected. Expected must be "
+        "a concrete observable value explicitly stated in the issue, never a "
+        "placeholder or an explanation that data is missing.\n"
+        "For every login scenario, fill the exact username and password "
+        "provided by the issue, then click the login/sign-in control. When a "
+        "scenario says valid login but omits the values locally, reuse the "
+        "valid credential pair explicitly provided by another acceptance "
+        "criterion. For invalid login, use the invalid pair.\n"
+        "For add-to-cart criteria, include the product name as visible context "
+        "in the add-to-cart target. For cart display, add the item and open "
+        "the cart within the same scenario.\n"
         "Use double quotes for all JSON keys and string values. Escape any "
         "double quote that appears inside a string. Include commas between "
         "every property and array item. Do not use trailing commas.\n"
