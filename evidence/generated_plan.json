@@ -1,57 +1,124 @@
 {
-  "summary": "Add task creation and completion functionality",
+  "summary": "Test SauceDemo login and shopping cart functionality",
   "scenarios": [
     {
-      "id": "1",
-      "criterion": "A user can add a non-empty task.",
+      "id": "TC1",
+      "criterion": "Valid login with standard_user and secret_sauce should display Products page",
       "steps": [
         {
           "action": "fill",
-          "target": "taskInput",
-          "value": "Buy milk"
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
         },
         {
           "action": "click",
-          "target": "addButton"
+          "target": "Login",
+          "value": null
         }
       ],
       "verification": {
         "kind": "visible_text",
-        "expected": "Buy milk"
+        "expected": "Products"
       }
     },
     {
-      "id": "2",
-      "criterion": "A user can mark a task as completed and the UI visibly indicates completion.",
-      "steps": [
-        {
-          "action": "click",
-          "target": "taskCheckbox",
-          "value": "Buy milk"
-        }
-      ],
-      "verification": {
-        "kind": "completed_task",
-        "expected": true
-      }
-    },
-    {
-      "id": "3",
-      "criterion": "Empty task names are rejected with a validation message.",
+      "id": "TC2",
+      "criterion": "Add Sauce Labs Backpack to cart after valid login; cart count becomes 1",
       "steps": [
         {
           "action": "fill",
-          "target": "taskInput",
-          "value": ""
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
         },
         {
           "action": "click",
-          "target": "addButton"
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Backpack | Add to cart",
+          "value": null
         }
       ],
       "verification": {
-        "kind": "validation_message",
-        "expected": "Task name cannot be empty"
+        "kind": "visible_text",
+        "expected": "1"
+      }
+    },
+    {
+      "id": "TC3",
+      "criterion": "After adding Sauce Labs Backpack to cart, opening cart displays the product",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Backpack | Add to cart",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Cart",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "Sauce Labs Backpack"
+      }
+    },
+    {
+      "id": "TC4",
+      "criterion": "Problem user can add Sauce Labs Bolt T-Shirt to cart; button changes to Remove",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "problem_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Bolt T-Shirt | Add to cart",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "Remove"
       }
     }
   ]

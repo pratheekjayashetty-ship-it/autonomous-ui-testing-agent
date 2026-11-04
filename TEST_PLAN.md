@@ -1,25 +1,53 @@
 # Test Plan & Strategy
 
+## Objective
+Demonstrate an issue-driven UI test agent that plans from acceptance criteria,
+executes bounded semantic browser actions against a public web application,
+and reports outcomes based on independent browser observations.
+
 ## Architecture
-1. `issue_source.py` loads a local issue fixture or fetches a GitHub issue using the REST API. GitHub issues must have the `Ready for QA` label.
-2. `planner.py` uses an OpenAI model to map issue acceptance criteria to structured scenarios.
-3. `browser_agent.py` provides a bounded LLM action loop and Playwright semantic locators.
-4. Deterministic verification checks rendered UI state after the agent acts.
-5. `reporting.py` saves JSON/Markdown results and scenario screenshots in `evidence/`.
+1. `agent/issue_source.py` loads a GitHub issue labelled `Ready for QA`, or the
+   local `sample_issue.json` fixture.
+2. `agent/planner.py` asks an OpenAI-compatible model for a structured JSON plan.
+   It rejects unsupported actions, malformed plans, and fill values not present
+   in the issue text.
+3. `agent/browser_agent.py` observes visible page state and executes only the
+   validated plan using Playwright semantic locators.
+4. Every scenario gets a fresh browser context and must establish its own state.
+5. Independent verification checks the final rendered UI, URL, validation text,
+   or image-source uniqueness.
+6. `agent/reporting.py` saves a JSON report, Markdown report, action log, and
+   scenario screenshots.
 
-## Loop prevention
-- Maximum 4 scenarios and 5 planner steps per scenario.
-- Maximum 8 browser action rounds per scenario.
-- Repeated action signatures are blocked.
-- Browser operations have timeouts.
-- Only allow-listed tools are exposed; arbitrary code execution is unavailable.
-- The model cannot independently mark a test as passed; the final observable verification decides.
+## Guardrails
+- Up to five scenarios and eight actions per scenario.
+- Fresh browser context per scenario; no state leakage.
+- No arbitrary code execution or model-selected browser tools at runtime.
+- Only `fill` and `click` actions are supported.
+- Ambiguous or missing controls fail closed.
+- A scenario passes only if all actions execute and independent verification
+  succeeds.
+- API, network, browser, and locator errors are execution failures, not product
+  defects.
 
-## Element identification and assertions
-Use accessible labels, placeholders, button roles and names. If a locator is ambiguous or absent, record an error rather than guessing a CSS selector. Final verification inspects rendered text or completed styling. Unsupported verification kinds fail closed.
+## Public target and defect demonstration
+The sample issue targets the public SauceDemo storefront. It includes standard
+and invalid login test data, a cart workflow for Sauce Labs Backpack, and an
+image-consistency check using the `problem_user` demo account. The image scenario
+is considered a defect only if the live page observation shows duplicate image
+sources for distinct labelled products. A test run must capture its screenshot
+and report before a defect claim is made.
 
-## Error handling and evidence
-Action errors are retained in the log. Screenshots are captured at scenario end. `report.json` contains structured results; `report.md` provides a readable summary.
+## Unit tests
+`pytest` tests validate planner input constraints, rejection of invented
+credentials, fixture loading, and report aggregation. Browser integration tests
+are separate because they require Chrome, network access, and the model API.
 
 ## Limitations
-This is a bounded take-home demo. `Ready for QA` is represented by a GitHub issue label; a GitHub Projects webhook is not included. The sample app and verification rules are intentionally small and should be adapted before testing other applications.
+- This is a bounded take-home prototype, not a general-purpose commercial test
+  framework.
+- The plan remains model-generated and should be reviewed for relevance.
+- `Ready for QA` is implemented as a GitHub issue label; a Projects webhook is
+  not included.
+- Dynamic interfaces, CAPTCHA, MFA, and non-semantic controls may require
+  additional adapters.

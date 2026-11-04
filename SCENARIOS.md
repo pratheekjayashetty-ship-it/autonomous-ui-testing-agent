@@ -1,23 +1,24 @@
 # Test Scenarios
 
-Source issue: `sample_issue.json`, labeled `Ready for QA`.
+Source: `sample_issue.json` (or a configured GitHub issue labelled `Ready for QA`).
 
-1. **AC1 — Add a non-empty task**
-   - Given the Task Manager page is open
-   - When a non-empty task name is entered and Add task is clicked
-   - Then the task is visible and a confirmation appears.
+The runtime planner generates scenarios from the issue's acceptance criteria
+and explicit test data. Each scenario is executed in a fresh browser context.
 
-2. **AC2 — Task visibility**
-   - When a uniquely named task is added
-   - Then the exact task name appears in the list.
+Expected coverage from the fixture:
 
-3. **AC3 — Mark completed**
-   - Given a task exists
-   - When its Mark complete button is clicked
-   - Then the task has completed styling and the button label changes.
+1. **Valid login** — use the supplied standard test account and verify arrival
+   at the inventory page.
+2. **Invalid login** — use the supplied invalid account and verify the visible
+   application error message.
+3. **Add product to cart** — log in, add the named product using its contextual
+   action, and verify the cart count.
+4. **Cart contents** — independently log in, add the named product, open the
+   cart, and verify the selected product appears.
+5. **Image consistency defect check** — log in with the supplied defect-repro
+   account and compare visible labelled product image sources. Report a failure
+   only if the observed UI violates the stated criterion.
 
-4. **AC4 — Reject empty task**
-   - When Add task is clicked with an empty field
-   - Then `Please enter a task name.` appears and no task is added.
-
-The runtime plan is generated from the issue body. Actual generated scenarios and results are stored in `evidence/`.
+The exact generated steps, actual outcomes, action logs, and screenshots are
+stored under `evidence/`. A planned scenario is not proof of a reproduced
+application defect; use the recorded report and screenshot.

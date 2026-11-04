@@ -1,4 +1,4 @@
-
+import json
 import unittest
 from unittest.mock import Mock
 
@@ -12,16 +12,15 @@ class TestPlanner(unittest.TestCase):
         self.client = Mock()
 
     def mock_response(self, plan):
-    	response = Mock()
-    	message = Mock()
-    	message.content = __import__("json").dumps(plan)
+        response = Mock()
+        message = Mock()
+        message.content = json.dumps(plan)
 
-    	choice = Mock()
-    	choice.message = message
+        choice = Mock()
+        choice.message = message
 
-    	response.choices = [choice]
-
-    	self.client.chat.completions.create.return_value = response
+        response.choices = [choice]
+        self.client.chat.completions.create.return_value = response
 
     def valid_plan(self):
         return {
@@ -69,6 +68,14 @@ class TestPlanner(unittest.TestCase):
         self.mock_response(plan)
 
         with self.assertRaises(ValueError):
+            make_plan({}, self.client, "test-model")
+
+    def test_rejects_placeholder_verification(self):
+        plan = self.valid_plan()
+        plan["scenarios"][0]["verification"]["expected"] = "Product name"
+        self.mock_response(plan)
+
+        with self.assertRaisesRegex(ValueError, "Placeholder"):
             make_plan({}, self.client, "test-model")
 
 

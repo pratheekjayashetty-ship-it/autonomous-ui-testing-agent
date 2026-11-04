@@ -1,6 +1,8 @@
 {
-  "number": 1,
-  "title": "Add task creation and completion functionality",
-  "labels": ["Ready for QA"],
-  "body": "Acceptance Criteria:\n1. A user can add a non-empty task.\n2. The new task is visible in the task list.\n3. A user can mark a task as completed and the UI visibly indicates completion.\n4. Empty task names are rejected with a validation message."
+  "number": 2,
+  "title": "Validate public storefront login, cart flow, and product image consistency",
+  "labels": [
+    "Ready for QA"
+  ],
+  "body": "Target application: https://www.saucedemo.com/\n\nAcceptance criteria:\n1. A user with valid credentials can sign in and reach the inventory page.\n2. Invalid credentials are rejected and an explanatory error message is shown.\n3. A user can add the selected product to the shopping cart.\n4. The shopping cart displays the selected product.\n5. The product listing must display distinct product images for distinct products. A repeated image used for multiple different product names is a defect and must be reported as a failed scenario.\n\nTest data for this public demo application:\n- Valid username: standard_user\n- Valid password: secret_sauce\n- Invalid username: invalid_user\n- Invalid password: invalid_pass\n- Product to add and verify: Sauce Labs Backpack\n- Known defect-reproduction account: problem_user\n- Known defect-reproduction password: secret_sauce\n\nPlanning requirements:\n- Each scenario runs in a fresh browser session and must include its own login/setup steps.\n- For add-to-cart, target the Add to cart control associated with Sauce Labs Backpack.\n- For cart contents, log in, add Sauce Labs Backpack, then open the cart and verify the product name.\n- For the defect scenario, log in as problem_user, inspect the product listing, and verify whether distinct products have distinct image sources. Do not mark it failed unless the observed images actually violate the criterion.\n- Never treat API, browser, locator, or network errors as application defects."
 }

@@ -1,496 +1,392 @@
-import json
 import re
 from pathlib import Path
-
-from openai import OpenAI
 
 ROOT = Path(__file__).resolve().parent.parent
 EVIDENCE = ROOT / "evidence"
 EVIDENCE.mkdir(parents=True, exist_ok=True)
-
 MAX_ACTIONS = 8
-
-SYSTEM = """
-You are a bounded autonomous UI testing agent.
-Your task is to execute the current test scenario using only the
-provided browser interaction tools.
-Observe the current page snapshot before choosing an action.
-Identify elements using their visible text, accessible labels,
-placeholders, roles, and surrounding page context.
-Do not assume application-specific selectors, IDs, or element names.
-Do not invent elements that are not present in the page snapshot.
-When multiple elements have the same label, use the surrounding
-visible context to identify the correct element.
-Use fill_field only for visible text fields.
-Use click_button only for visible, enabled buttons.
-Follow the scenario steps and acceptance criteria.
-Do not perform unrelated actions or invent additional requirements.
-Do not claim that a scenario passed without observable evidence.
-Finish with PASSED only when the scenario's expected outcome
-has been observed. Otherwise finish with FAILED and explain why.
-Stop when the scenario is complete, the action limit is reached,
-or no safe progress can be made.
-"""
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "fill_field",
-            "description": "Fill a visible text field.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string"},
-                    "value": {"type": "string"},
-                },
-                "required": ["target", "value"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "click_button",
-            "description": (
-                "Click a visible enabled button. If multiple buttons have the "
-                "same label, include surrounding context in target, for example "
-                "'Sauce Labs Backpack | Add to cart'. Use only context observed "
-                "in the current page snapshot."
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "target": {"type": "string"},
-                },
-                "required": ["target"],
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "finish",
-            "description": "Finish the scenario with a result explanation.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "status": {
-                        "type": "string",
-                        "enum": ["PASSED", "FAILED"],
-                    },
-                    "details": {"type": "string"},
-                },
-                "required": ["status", "details"],
-                "additionalProperties": False,
-            },
-        },
-    },
-]
 
 
 def snapshot(page):
-    """Capture visible page content and semantic interactive elements."""
+    """Capture observable page content and semantic controls before actions."""
     body = page.locator("body").inner_text(timeout=3000)[:6000]
+    buttons, fields, links, images = [], [], [], []
 
-    buttons = []
     button_loc = page.get_by_role("button")
-
-    for i in range(min(button_loc.count(), 30)):
-        button = button_loc.nth(i)
+    for i in range(min(button_loc.count(), 40)):
+        el = button_loc.nth(i)
         try:
-            if button.is_visible():
+            if el.is_visible():
                 buttons.append({
-                    "text": button.inner_text(timeout=1000).strip(),
-                    "aria_label": button.get_attribute("aria-label"),
-                    "enabled": button.is_enabled(),
+                    "name": el.get_attribute("aria-label") or el.inner_text(timeout=700).strip(),
+                    "enabled": el.is_enabled(),
                 })
         except Exception:
-            continue
+            pass
 
-    fields = []
     field_loc = page.locator("input, textarea, select")
-
-    for i in range(min(field_loc.count(), 20)):
-        field = field_loc.nth(i)
+    for i in range(min(field_loc.count(), 30)):
+        el = field_loc.nth(i)
         try:
-            if field.is_visible():
+            if el.is_visible():
                 fields.append({
-                    "tag": field.evaluate("(el) => el.tagName.toLowerCase()"),
-                    "type": field.get_attribute("type"),
-                    "name": field.get_attribute("name"),
-                    "placeholder": field.get_attribute("placeholder"),
-                    "aria_label": field.get_attribute("aria-label"),
-                    "label": field.get_attribute("aria-labelledby"),
-                    "enabled": field.is_enabled(),
+                    "type": el.get_attribute("type"),
+                    "placeholder": el.get_attribute("placeholder"),
+                    "aria_label": el.get_attribute("aria-label"),
+                    "name": el.get_attribute("name"),
+                    "enabled": el.is_enabled(),
                 })
         except Exception:
-            continue
+            pass
 
-    links = []
     link_loc = page.get_by_role("link")
-
-    for i in range(min(link_loc.count(), 15)):
-        link = link_loc.nth(i)
+    for i in range(min(link_loc.count(), 40)):
+        el = link_loc.nth(i)
         try:
-            if link.is_visible():
+            if el.is_visible():
                 links.append({
-                    "text": link.inner_text(timeout=1000).strip(),
-                    "href": link.get_attribute("href"),
+                    "name": el.get_attribute("aria-label") or el.inner_text(timeout=700).strip(),
+                    "href": el.get_attribute("href"),
                 })
         except Exception:
-            continue
+            pass
 
-    images = []
     image_loc = page.locator("img")
-    for i in range(min(image_loc.count(), 30)):
-        image = image_loc.nth(i)
+    for i in range(min(image_loc.count(), 50)):
+        el = image_loc.nth(i)
         try:
-            if image.is_visible():
+            if el.is_visible():
                 images.append({
-                    "alt": image.get_attribute("alt"),
-                    "src": image.get_attribute("src"),
+                    "alt": el.get_attribute("alt") or "",
+                    "src": el.get_attribute("src") or "",
                 })
         except Exception:
-            continue
+            pass
 
     return {
+        "url": page.url,
         "visible_text": body,
         "buttons": buttons,
         "fields": fields,
         "links": links,
         "images": images,
-        "url": page.url,
     }
 
 
+def _unique_visible_enabled(locator, description):
+    found = []
+    for i in range(min(locator.count(), 50)):
+        item = locator.nth(i)
+        try:
+            if item.is_visible() and item.is_enabled():
+                found.append(item)
+        except Exception:
+            continue
+    if len(found) != 1:
+        raise RuntimeError(
+            f"Expected one visible enabled {description}; found {len(found)}"
+        )
+    return found[0]
+
 
 def _fill_field(page, target, value):
-    """Fill one uniquely identified, visible, enabled text field."""
     target = target.strip()
-    candidates = [
+    locators = [
         page.get_by_label(target, exact=True),
         page.get_by_placeholder(target, exact=True),
         page.get_by_role("textbox", name=target, exact=True),
     ]
-
-    for candidate in candidates:
+    errors = []
+    for locator in locators:
         try:
-            matches = [
-                candidate.nth(i)
-                for i in range(candidate.count())
-                if candidate.nth(i).is_visible()
-                and candidate.nth(i).is_enabled()
-            ]
-            if len(matches) == 1:
-                matches[0].fill(value, timeout=4000)
-                return
-        except Exception:
-            continue
-
+            count = locator.count()
+            if count == 1:
+                item = locator.nth(0)
+                if item.is_visible() and item.is_enabled():
+                    item.fill(value, timeout=5000)
+                    return
+        except Exception as exc:
+            errors.append(str(exc))
     raise RuntimeError(
-        f"Could not locate a unique visible enabled text field for {target!r}"
+        f"Could not identify a unique visible enabled field {target!r}"
     )
 
 
 def _click_button(page, target):
-    """Click a unique visible button, optionally scoped by visible context."""
+    """Click by accessible name; contextual targets disambiguate repeated actions."""
     target = target.strip()
-
-    if "|" in target:
-        context, button_name = (
-            part.strip() for part in target.split("|", 1)
-        )
-    else:
-        context, button_name = "", target
+    context, label = (part.strip() for part in target.split("|", 1)) if "|" in target else ("", target)
 
     if context:
-        context_matches = page.get_by_text(context, exact=True)
-        visible_contexts = []
-
-        for index in range(context_matches.count()):
-            element = context_matches.nth(index)
+        text_matches = page.get_by_text(context, exact=True)
+        contexts = []
+        for i in range(min(text_matches.count(), 30)):
+            el = text_matches.nth(i)
             try:
-                if element.is_visible():
-                    visible_contexts.append(element)
+                if el.is_visible():
+                    contexts.append(el)
             except Exception:
-                continue
+                pass
 
-        if not visible_contexts:
-            raise RuntimeError(
-                f"Could not find visible context {context!r}"
-            )
-
-        for context_element in visible_contexts:
-            container = context_element
-
-            # Search progressively larger ancestors. Stop at the first
-            # ancestor that contains exactly one matching enabled button.
-            for _ in range(6):
-                buttons = container.get_by_role(
-                    "button", name=button_name, exact=True
-                )
-                try:
-                    matching = []
-                    for index in range(buttons.count()):
-                        button = buttons.nth(index)
-                        if button.is_visible() and button.is_enabled():
-                            matching.append(button)
-
-                    if len(matching) == 1:
-                        matching[0].click(timeout=4000)
-                        return
-                except Exception:
-                    pass
-
+        # Walk ancestors from the matching visible text to find the associated action.
+        for match in contexts:
+            container = match
+            for _ in range(12):
+                for role in ("button", "link"):
+                    try:
+                        locator = container.get_by_role(role, name=label, exact=True)
+                        if locator.count() == 1:
+                            item = locator.nth(0)
+                            if item.is_visible() and item.is_enabled():
+                                item.click(timeout=5000)
+                                return
+                    except Exception:
+                        pass
                 try:
                     container = container.locator("xpath=..")
                 except Exception:
                     break
-
         raise RuntimeError(
-            f"Could not find one enabled {button_name!r} button "
-            f"associated with visible context {context!r}"
+            f"Could not find a unique {label!r} control associated with {context!r}"
         )
 
-    candidates = [
-        page.get_by_role("button", name=button_name, exact=True),
-        page.get_by_role("link", name=button_name, exact=True),
-    ]
+    for role in ("button", "link"):
+        locator = page.get_by_role(role, name=label, exact=True)
+        try:
+            count = locator.count()
+            if count == 1:
+                item = locator.nth(0)
+                if item.is_visible() and item.is_enabled():
+                    item.click(timeout=5000)
+                    return
+            elif count > 1:
+                visible = [
+                    locator.nth(i) for i in range(count)
+                    if locator.nth(i).is_visible() and locator.nth(i).is_enabled()
+                ]
+                if len(visible) == 1:
+                    visible[0].click(timeout=5000)
+                    return
+        except Exception:
+            pass
 
-    for candidate in candidates:
-        visible_enabled = []
-        for index in range(candidate.count()):
-            element = candidate.nth(index)
+    # Generic navigation fallback for icon-only cart/basket controls.
+    # Prefer semantic navigation signals and avoid product action buttons such
+    # as "Add to cart" or "Remove from cart".
+    if any(word in label.casefold() for word in ("cart", "basket", "bag")):
+        interactive = page.locator(
+            "a, button, [role='link'], [role='button']"
+        )
+        matches = []
+        seen = set()
+
+        for i in range(min(interactive.count(), 80)):
+            item = interactive.nth(i)
             try:
-                if element.is_visible() and element.is_enabled():
-                    visible_enabled.append(element)
+                if not item.is_visible() or not item.is_enabled():
+                    continue
+
+                aria_label = item.get_attribute("aria-label") or ""
+                title = item.get_attribute("title") or ""
+                href = item.get_attribute("href") or ""
+                css_class = item.get_attribute("class") or ""
+                visible_text = item.inner_text(timeout=500).strip()
+
+                # Only explicit semantic attributes/classes may contain a
+                # substring signal. Ordinary action text is handled separately.
+                semantic_signals = [aria_label, title, href, css_class]
+
+                descendants = item.locator("[aria-label], [title], svg")
+                for j in range(min(descendants.count(), 10)):
+                    child = descendants.nth(j)
+                    semantic_signals.extend([
+                        child.get_attribute("aria-label") or "",
+                        child.get_attribute("title") or "",
+                    ])
+                    if child.evaluate(
+                        "(el) => el.tagName.toLowerCase() === 'svg'"
+                    ):
+                        svg_title = child.locator("title").first
+                        if svg_title.count():
+                            semantic_signals.append(
+                                svg_title.inner_text(timeout=300)
+                            )
+
+                semantic_text = " ".join(semantic_signals).casefold()
+                semantic_text = semantic_text.replace("_", " ").replace("-", " ")
+                semantic_match = bool(
+                    re.search(r"\b(cart|basket|bag)\b", semantic_text)
+                )
+
+                # Visible text is a fallback only when it names the control,
+                # not when it describes an action on a product.
+                normalized_text = re.sub(
+                    r"\s+", " ", visible_text.casefold()
+                ).strip()
+                text_match = bool(re.fullmatch(
+                    r"(?:shopping\s+)?(?:cart|basket|bag)(?:\s+\d+)?",
+                    normalized_text,
+                ))
+
+                action_text = bool(re.search(
+                    r"\b(add|remove|delete)\b.*\b(cart|basket|bag)\b",
+                    normalized_text,
+                ))
+                if action_text:
+                    continue
+
+                if semantic_match or text_match:
+                    identity = item.evaluate(
+                        "(el) => el.tagName + '|' + "
+                        "(el.getAttribute('href') || '') + '|' + "
+                        "(el.getAttribute('aria-label') || '') + '|' + "
+                        "(el.getAttribute('class') || '')"
+                    )
+                    if identity not in seen:
+                        seen.add(identity)
+                        matches.append(item)
             except Exception:
                 continue
 
-        if len(visible_enabled) == 1:
-            visible_enabled[0].click(timeout=4000)
+        if len(matches) == 1:
+            matches[0].click(timeout=5000)
             return
-        if len(visible_enabled) > 1:
+        if len(matches) > 1:
             raise RuntimeError(
-                f"Ambiguous target {button_name!r}: "
-                f"{len(visible_enabled)} visible enabled matches"
+                f"Found {len(matches)} possible visible cart/basket controls "
+                f"for {label!r}; refusing an ambiguous click"
             )
+        raise RuntimeError(
+            f"Could not identify a visible cart/basket control for {label!r}"
+        )
 
-    raise RuntimeError(
-        f"No unique visible enabled button or link found for {button_name!r}"
-    )
+    raise RuntimeError(f"No unique visible enabled button or link found for {label!r}")
 
 
-def _verify(page, scenario, history):
-    """Verify scenario outcomes using observable page evidence."""
+def _verify(page, scenario, history=None):
+    """Verify the scenario's final observable state.
+
+    ``history`` is accepted for backward compatibility with earlier callers
+    and tests. Verification is deliberately based on the current browser state.
+    """
     verification = scenario.get("verification", {})
-    kind = verification.get("kind", "")
+    kind = verification.get("kind")
     expected = str(verification.get("expected", "")).strip()
+    body = page.locator("body").inner_text(timeout=3000)
 
-    try:
-        body = page.locator("body").inner_text(timeout=3000)
+    if kind == "visible_text":
+        ok = expected.casefold() in body.casefold()
+        return ok, f"Expected visible text {expected!r}; observed={ok}"
 
-        if kind == "visible_text":
-            passed = expected.casefold() in body.casefold()
-            return passed, (
-                f"Expected visible text {expected!r}; "
-                f"observed={passed}"
-            )
+    if kind == "text_absent":
+        ok = expected.casefold() not in body.casefold()
+        return ok, f"Expected text {expected!r} absent; observed_absent={ok}"
 
-        if kind == "text_absent":
-            passed = expected.casefold() not in body.casefold()
-            return passed, (
-                f"Expected text {expected!r} to be absent; "
-                f"observed_absent={passed}"
-            )
+    if kind == "url_contains":
+        ok = expected.casefold() in page.url.casefold()
+        return ok, f"Expected URL to contain {expected!r}; actual={page.url!r}"
 
-        if kind == "url_contains":
-            passed = expected.casefold() in page.url.casefold()
-            return passed, (
-                f"Expected URL to contain {expected!r}; "
-                f"actual URL={page.url!r}"
-            )
+    if kind == "validation_message":
+        messages = []
+        for role in ("alert", "status"):
+            locator = page.get_by_role(role)
+            for i in range(min(locator.count(), 10)):
+                item = locator.nth(i)
+                if item.is_visible():
+                    messages.append(item.inner_text(timeout=1000))
+        actual = " ".join(messages).strip() or body
+        ok = bool(expected) and expected.casefold() in actual.casefold()
+        return ok, f"Expected validation message {expected!r}; observed={actual!r}"
 
-        if kind == "distinct_images":
-            images = page.locator("img")
-            visible_sources = []
+    if kind == "distinct_images":
+        locator = page.locator("img")
+        labelled = []
+        for i in range(min(locator.count(), 60)):
+            item = locator.nth(i)
+            try:
+                alt = (item.get_attribute("alt") or "").strip()
+                src = (item.get_attribute("src") or "").strip()
+                if item.is_visible() and alt and src:
+                    labelled.append((alt, src))
+            except Exception:
+                pass
+        product_like = [(alt, src) for alt, src in labelled if alt.casefold() not in {"logo", "company logo"}]
+        sources = [src for _, src in product_like]
+        duplicates = sorted({src for src in sources if sources.count(src) > 1})
+        ok = len(product_like) >= 2 and not duplicates
+        return ok, (
+            f"Checked {len(product_like)} visible labelled images; "
+            f"duplicate sources={len(duplicates)}"
+        )
 
-            for index in range(min(images.count(), 50)):
-                image = images.nth(index)
-                try:
-                    if not image.is_visible():
-                        continue
-                    alt = (image.get_attribute("alt") or "").strip()
-                    src = (image.get_attribute("src") or "").strip()
-                    if alt and src:
-                        visible_sources.append({"alt": alt, "src": src})
-                except Exception:
-                    continue
-
-            if len(visible_sources) < 2:
-                return False, (
-                    "Could not verify image distinctness: fewer than "
-                    "two visible images with alt text and source were found"
-                )
-
-            sources = [item["src"] for item in visible_sources]
-            duplicates = sorted({
-                src for src in sources if sources.count(src) > 1
-            })
-            passed = not duplicates
-            return passed, (
-                f"Checked {len(visible_sources)} visible labelled images; "
-                f"duplicate image sources found={len(duplicates)}"
-            )
-
-        if kind == "validation_message":
-            messages = []
-
-            for role in ("alert", "status"):
-                locator = page.get_by_role(role)
-                for index in range(min(locator.count(), 10)):
-                    element = locator.nth(index)
-                    if element.is_visible():
-                        messages.append(
-                            element.inner_text(timeout=1000)
-                        )
-
-            actual = " ".join(messages).strip()
-
-            # Some applications display validation text without
-            # assigning an alert or status role.
-            if not actual:
-                actual = body
-
-            passed = bool(expected) and (
-                expected.casefold() in actual.casefold()
-            )
-
-            return passed, (
-                f"Expected validation text {expected!r}; "
-                f"observed={actual!r}"
-            )
-
-        return False, f"Unsupported verification kind: {kind!r}"
-
-    except Exception as exc:
-        return False, f"Independent verification error: {exc}"
+    return False, f"Unsupported verification kind: {kind!r}"
 
 
-
-
-def run_scenario(page, scenario, client: OpenAI, model: str, index: int):
-    history = []
-    seen = set()
+def run_scenario(page, scenario, client=None, model=None, index=1):
+    """Execute a validated plan deterministically and independently verify it."""
     logs = []
-    ai_status = "FAILED"
-    ai_details = "Action limit reached."
+    steps = scenario.get("steps", [])
+    completed = 0
+    failure = None
 
-    for action_number in range(MAX_ACTIONS):
-        try:
-            current_page = snapshot(page)
-            response = client.chat.completions.create(
-                model=model,
-                temperature=0,
-                tools=TOOLS,
-                tool_choice="required",
-                messages=[
-                    {"role": "system", "content": SYSTEM},
-                    {
-                        "role": "user",
-                        "content": json.dumps({
-                            "scenario": scenario,
-                            "page": current_page,
-                            "history": history,
-                            "action": action_number + 1,
-                            "max_actions": MAX_ACTIONS,
-                        }),
-                    },
-                ],
-            )
+    if not isinstance(steps, list) or not steps or len(steps) > MAX_ACTIONS:
+        failure = f"Invalid action count; expected 1-{MAX_ACTIONS} steps"
+    else:
+        for number, step in enumerate(steps, start=1):
+            try:
+                if not isinstance(step, dict):
+                    raise RuntimeError("Step is not an object")
+                action, target = step.get("action"), step.get("target")
+                if action == "fill":
+                    value = step.get("value")
+                    if not isinstance(value, str):
+                        raise RuntimeError("Fill action requires a string value")
+                elif action == "click":
+                    value = None
+                else:
+                    raise RuntimeError(f"Unsupported action {action!r}")
 
-            message = response.choices[0].message
-            if not message.tool_calls:
-                ai_details = "The model returned no tool call."
-                logs.append(ai_details)
-                break
-
-            call = message.tool_calls[0]
-            name = call.function.name
-            args = json.loads(call.function.arguments)
-
-            if name == "finish":
-                ai_status = args["status"]
-                ai_details = args["details"]
+                observed = snapshot(page)
                 logs.append(
-                    f"{scenario.get('id')}: finish {ai_status}: {ai_details}"
+                    f"{scenario.get('id')}: step {number}: "
+                    f"observed_url={observed['url']}; {action} {target!r}"
                 )
+                if action == "fill":
+                    _fill_field(page, target, value)
+                else:
+                    _click_button(page, target)
+                completed += 1
+            except Exception as exc:
+                failure = f"Step {number} failed: {type(exc).__name__}: {exc}"
+                logs.append(f"{scenario.get('id')}: {failure}")
                 break
-
-            signature = (
-                name,
-                args.get("target"),
-                args.get("value"),
-            )
-            if signature in seen:
-                logs.append(f"Stopped repeated action: {signature}")
-                break
-            seen.add(signature)
-
-            logs.append(f"{scenario.get('id')}: {name} {args}")
-
-            if name == "fill_field":
-                _fill_field(page, args["target"], args["value"])
-            elif name == "click_button":
-                _click_button(page, args["target"])
-            else:
-                raise RuntimeError(f"Unknown tool: {name}")
-
-            history.append({
-                "tool": name,
-                "args": args,
-                "result": "ok",
-            })
-
-        except Exception as exc:
-            error_text = str(exc)[:300]
-            history.append({
-                "tool": name if "name" in locals() else "unknown",
-                "args": args if "args" in locals() else {},
-                "result": "error",
-                "error": error_text,
-            })
-            logs.append(f"Action error: {error_text}")
-            ai_status = "FAILED"
-            ai_details = f"Browser action failed: {error_text}"
-            break
 
     scenario_id = str(scenario.get("id", index))
-    safe_id = re.sub(r"[^a-zA-Z0-9_-]", "_", scenario_id)
+    safe_id = re.sub(r"[^A-Za-z0-9_-]", "_", scenario_id)
     screenshot = EVIDENCE / f"{index:02d}_{safe_id}.png"
-
     try:
         page.screenshot(path=str(screenshot), full_page=True)
     except Exception as exc:
         logs.append(f"Screenshot failed: {exc}")
 
-    try:
-        verified, verification_details = _verify(page, scenario, history)
-    except Exception as exc:
+    complete = bool(steps) and completed == len(steps) and failure is None
+    if complete:
+        try:
+            verified, verification_details = _verify(page, scenario)
+        except Exception as exc:
+            verified, verification_details = False, f"Verification error: {exc}"
+    else:
         verified = False
-        verification_details = f"Independent verification error: {exc}"
+        verification_details = "Not run because one or more planned actions failed."
 
-    status = "PASSED" if verified else "FAILED"
+    passed = complete and verified
+    status = "PASSED" if passed else "FAILED"
     details = (
-        f"Independent verification: {verification_details}; "
-        f"observed pass={verified}. "
-        f"AI result={ai_status}: {ai_details}"
+        f"Executed {completed}/{len(steps)} planned steps. "
+        f"Independent verification: {verification_details}. "
+        f"Execution error: {failure or 'none'}"
     )
     logs.append(f"{scenario_id}: {status}: {details}")
-
     return {
         "id": scenario_id,
         "criterion": scenario.get("criterion", ""),
