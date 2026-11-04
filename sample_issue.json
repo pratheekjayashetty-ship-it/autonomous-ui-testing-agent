@@ -1,6 +1,8 @@
 {
-  "number": 1,
-  "title": "Add task creation and completion functionality",
-  "labels": ["Ready for QA"],
-  "body": "Acceptance Criteria:\n1. A user can add a non-empty task.\n2. The new task is visible in the task list.\n3. A user can mark a task as completed and the UI visibly indicates completion.\n4. Empty task names are rejected with a validation message."
+  "number": 2,
+  "title": "Test SauceDemo login and shopping cart",
+  "labels": [
+    "Ready for QA"
+  ],
+  "body": "Target application: https://www.saucedemo.com/\n\n## Acceptance Criteria\n1. Valid login:\n   - Username: standard_user\n   - Password: secret_sauce\n   - Verify that the Products page is displayed.\n2. Invalid login:\n   - Username: invalid_user\n   - Password: wrong_password\n   - Verify that this exact error message is displayed: Epic sadface: Username and password do not match any user in this service\n3. Add product to cart:\n   - Log in using valid credentials.\n   - Add Sauce Labs Backpack to the cart.\n   - Verify that the cart count becomes 1.\n4. Cart display:\n   - Log in using valid credentials in an independent browser session.\n   - Add Sauce Labs Backpack to the cart.\n   - Open the cart.\n   - Verify that Sauce Labs Backpack is displayed.\n5. Problem user - Add to cart regression:\n   - Username: problem_user\n   - Password: secret_sauce\n   - Log in using the supplied credentials.\n   - Locate Sauce Labs Bolt T-Shirt and click its associated Add to cart button.\n   - Verify that the button label changes to Remove.\n   - Report a failed scenario only when the action completes but Remove is not visible.\n\nPlanning requirements:\n- Generate one separate scenario for each numbered acceptance criterion, in the same order.\n- Each scenario must run in a fresh browser context and include its own login/setup actions.\n- Never omit the invalid-login criterion or the problem-user regression criterion.\n- Never treat API, browser, locator, or network errors as application defects."
 }

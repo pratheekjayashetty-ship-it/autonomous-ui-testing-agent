@@ -1,5 +1,8 @@
-.venv/
 .env
+.venv/
 __pycache__/
-evidence/*
-!evidence/.gitkeep
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+.DS_Store

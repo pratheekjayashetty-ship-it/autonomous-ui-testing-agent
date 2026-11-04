@@ -1,5 +1,5 @@
-import os
 import json
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -11,102 +11,79 @@ from agent.planner import make_plan
 from agent.browser_agent import run_scenario
 from agent.reporting import write_report, EVIDENCE
 
-
 ROOT = Path(__file__).resolve().parent
 load_dotenv(ROOT / ".env")
 
 
 def main():
-    key = os.getenv("OPENAI_API_KEY", "").strip()
-
-    if not key or key == "replace_me":
+    api_key = os.getenv("OPENAI_API_KEY", "").strip()
+    if not api_key or api_key == "replace_me":
         raise SystemExit("Set OPENAI_API_KEY in .env")
 
     model = os.getenv("OPENAI_MODEL", "openai/gpt-oss-20b")
-    url = os.getenv("APP_URL", "http://127.0.0.1:5000")
+    base_url = os.getenv("OPENAI_BASE_URL", "https://api.groq.com/openai/v1")
+    app_url = os.getenv("APP_URL", "https://www.saucedemo.com/").strip()
+    headless = os.getenv("HEADLESS", "false").casefold() == "true"
 
-    client = OpenAI(
-        api_key=key,
-        base_url="https://api.groq.com/openai/v1"
-    )
-
+    client = OpenAI(api_key=api_key, base_url=base_url)
     issue = load_issue()
-
-    print(
-        f"Loaded issue #{issue.get('number')}: "
-        f"{issue.get('title')}"
-    )
+    print(f"Loaded issue #{issue.get('number')}: {issue.get('title')}")
+    print(f"Target application: {app_url}")
+    print("Browser: installed Google Chrome (Playwright channel=chrome)")
 
     plan = make_plan(issue, client, model)
-
+    EVIDENCE.mkdir(parents=True, exist_ok=True)
     (EVIDENCE / "generated_plan.json").write_text(
-        json.dumps(plan, indent=2),
-        encoding="utf-8"
+        json.dumps(plan, indent=2), encoding="utf-8"
     )
 
-    results = []
-    logs = []
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            executable_path=r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-            headless=False
-        )
-
-        page = browser.new_page(
-            viewport={"width": 1365, "height": 900}
-        )
-
-        page.set_default_timeout(4000)
-
+    results, logs = [], []
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(channel="chrome", headless=headless)
         try:
-            page.goto(
-                url,
-                wait_until="domcontentloaded",
-                timeout=10000
-            )
-
-            for i, s in enumerate(plan["scenarios"], 1):
-                print(
-                    f"Running {s.get('id')}: "
-                    f"{s.get('criterion')}"
+            for index, scenario in enumerate(plan["scenarios"], start=1):
+                scenario_id = scenario.get("id", f"scenario_{index}")
+                print(f"\nRunning {scenario_id}: {scenario.get('criterion', '')}")
+                context = browser.new_context(
+                    viewport={"width": 1365, "height": 900}
                 )
-
-                result, entries = run_scenario(
-                    page,
-                    s,
-                    client,
-                    model,
-                    i
+                page = context.new_page()
+                page.set_default_timeout(
+                    int(os.getenv("PLAYWRIGHT_TIMEOUT_MS", "7000"))
                 )
-
-                results.append(result)
-                logs.extend(entries)
-
-                print(
-                    f"  {result['status']}: "
-                    f"{result['details']}"
-                )
-
-                page.goto(
-                    url,
-                    wait_until="domcontentloaded",
-                    timeout=10000
-                )
-
+                try:
+                    page.goto(
+                        app_url,
+                        wait_until="domcontentloaded",
+                        timeout=int(os.getenv("PAGE_LOAD_TIMEOUT_MS", "30000")),
+                    )
+                    result, entries = run_scenario(
+                        page, scenario, client, model, index
+                    )
+                    results.append(result)
+                    logs.extend(entries)
+                    print(f"  {result['status']}: {result['details']}")
+                except Exception as exc:
+                    result = {
+                        "id": scenario_id,
+                        "criterion": scenario.get("criterion", ""),
+                        "status": "FAILED",
+                        "details": f"Scenario setup error: {type(exc).__name__}: {exc}",
+                        "screenshot": "",
+                    }
+                    results.append(result)
+                    logs.append(f"{scenario_id}: {result['details']}")
+                    print(f"  FAILED: {result['details']}")
+                finally:
+                    context.close()
         finally:
             browser.close()
 
-    report = write_report(
-        issue,
-        plan,
-        results,
-        logs
-    )
-
-    print("Summary:", report["summary"])
-    print("Evidence:", EVIDENCE)
-
+    report = write_report(issue, plan, results, logs)
+    print("\nRun summary:", report["summary"])
+    print(f"Evidence directory: {EVIDENCE}")
+    print(f"Markdown report: {EVIDENCE / 'report.md'}")
+    print(f"JSON report: {EVIDENCE / 'report.json'}")
     if report["summary"]["failed"]:
         raise SystemExit(1)
 

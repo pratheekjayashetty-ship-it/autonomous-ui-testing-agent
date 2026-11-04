@@ -1,57 +1,149 @@
 {
-  "summary": "Add task creation and completion functionality",
+  "summary": "Test plan for SauceDemo login and shopping cart",
   "scenarios": [
     {
-      "id": "1",
-      "criterion": "A user can add a non-empty task.",
+      "id": "TC1",
+      "criterion": "Valid login - Username: standard_user - Password: secret_sauce - Verify that the Products page is displayed.",
       "steps": [
         {
           "action": "fill",
-          "target": "taskInput",
-          "value": "Buy milk"
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
         },
         {
           "action": "click",
-          "target": "addButton"
+          "target": "Login",
+          "value": null
         }
       ],
       "verification": {
         "kind": "visible_text",
-        "expected": "Buy milk"
+        "expected": "Products"
       }
     },
     {
-      "id": "2",
-      "criterion": "A user can mark a task as completed and the UI visibly indicates completion.",
-      "steps": [
-        {
-          "action": "click",
-          "target": "taskCheckbox",
-          "value": "Buy milk"
-        }
-      ],
-      "verification": {
-        "kind": "completed_task",
-        "expected": true
-      }
-    },
-    {
-      "id": "3",
-      "criterion": "Empty task names are rejected with a validation message.",
+      "id": "TC2",
+      "criterion": "Invalid login - Username: invalid_user - Password: wrong_password - Verify that this exact error message is displayed: Epic sadface: Username and password do not match any user in this service",
       "steps": [
         {
           "action": "fill",
-          "target": "taskInput",
-          "value": ""
+          "target": "Username",
+          "value": "invalid_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "wrong_password"
         },
         {
           "action": "click",
-          "target": "addButton"
+          "target": "Login",
+          "value": null
         }
       ],
       "verification": {
         "kind": "validation_message",
-        "expected": "Task name cannot be empty"
+        "expected": "Epic sadface: Username and password do not match any user in this service"
+      }
+    },
+    {
+      "id": "TC3",
+      "criterion": "Add product to cart - Log in using valid credentials. - Add Sauce Labs Backpack to the cart. - Verify that the cart count becomes 1.",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Backpack | Add to cart",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "1"
+      }
+    },
+    {
+      "id": "TC4",
+      "criterion": "Cart display - Log in using valid credentials in an independent browser session. - Add Sauce Labs Backpack to the cart. - Open the cart. - Verify that Sauce Labs Backpack is displayed.",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "standard_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Backpack | Add to cart",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Cart",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "Sauce Labs Backpack"
+      }
+    },
+    {
+      "id": "TC5",
+      "criterion": "Problem user \u2013 Add-to-cart regression - Username: problem_user - Password: secret_sauce - Log in using the supplied credentials. - Locate Sauce Labs Bolt T-Shirt. - Click its associated Add to cart button. - Verify that its button label changes to Remove. - Report FAILED if the action completes but Remove is not visible.",
+      "steps": [
+        {
+          "action": "fill",
+          "target": "Username",
+          "value": "problem_user"
+        },
+        {
+          "action": "fill",
+          "target": "Password",
+          "value": "secret_sauce"
+        },
+        {
+          "action": "click",
+          "target": "Login",
+          "value": null
+        },
+        {
+          "action": "click",
+          "target": "Sauce Labs Bolt T-Shirt | Add to cart",
+          "value": null
+        }
+      ],
+      "verification": {
+        "kind": "visible_text",
+        "expected": "Remove"
       }
     }
   ]

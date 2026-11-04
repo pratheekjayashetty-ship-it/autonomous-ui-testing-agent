@@ -1,23 +1,21 @@
 # Test Scenarios
 
-Source issue: `sample_issue.json`, labeled `Ready for QA`.
+Source: `sample_issue.json` (or a configured GitHub issue labelled `Ready for QA`).
 
-1. **AC1 — Add a non-empty task**
-   - Given the Task Manager page is open
-   - When a non-empty task name is entered and Add task is clicked
-   - Then the task is visible and a confirmation appears.
+The runtime planner generates scenarios from the issue's acceptance criteria
+and explicit test data. Each scenario is executed in a fresh browser context.
 
-2. **AC2 — Task visibility**
-   - When a uniquely named task is added
-   - Then the exact task name appears in the list.
-
-3. **AC3 — Mark completed**
-   - Given a task exists
-   - When its Mark complete button is clicked
-   - Then the task has completed styling and the button label changes.
-
-4. **AC4 — Reject empty task**
-   - When Add task is clicked with an empty field
-   - Then `Please enter a task name.` appears and no task is added.
-
-The runtime plan is generated from the issue body. Actual generated scenarios and results are stored in `evidence/`.
+Expected coverage from the fixture:
+1. **Valid login** — use the supplied standard account and verify the Products
+   page is displayed.
+2. **Invalid login** — use the supplied invalid account and verify the exact
+   application error message is displayed.
+3. **Add product to cart** — add Sauce Labs Backpack and verify the cart count.
+4. **Cart contents** — independently log in, add Sauce Labs Backpack, open the
+   cart, and verify the product appears.
+5. **Problem-user cart regression** — log in as `problem_user`, add the Sauce
+   Labs Bolt T-Shirt, and verify the button changes to `Remove`. Report a defect
+   only if the action completes but `Remove` is not visible.
+The exact generated steps, actual outcomes, action logs, and screenshots are
+stored under `evidence/`. A planned scenario is not proof of a reproduced
+application defect; use the recorded report and screenshot.

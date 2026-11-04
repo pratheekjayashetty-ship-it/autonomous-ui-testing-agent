@@ -1,195 +1,125 @@
 # Autonomous UI Testing Agent
 
-An AI-powered QA agent that reads a GitHub issue, generates test scenarios from its acceptance criteria, executes bounded browser actions using Playwright, validates the UI, and saves structured test reports and screenshot evidence.
+An issue-driven UI testing prototype. It reads acceptance criteria and explicit
+test data from a GitHub issue (or local fixture), asks an OpenAI-compatible model
+to generate a bounded test plan, executes the validated plan with Playwright,
+independently verifies observable outcomes, and saves reports and screenshots.
 
-## Project Overview
+## Recruiter feedback addressed
 
-This project demonstrates an autonomous UI testing workflow:
+- **Public app:** defaults to `https://www.saucedemo.com/`; `APP_URL` is configurable.
+- **Generic planning/execution:** planner instructions contain no app-specific
+  selectors or credentials. Test data must come from the issue. Browser actions
+  use accessible names, labels, visible context, and observed link destinations.
+- **Failure reporting:** the fixture includes a `problem_user` add-to-cart
+  regression for the Sauce Labs Bolt T-Shirt. A defect is reported only when
+  the click completes but the expected `Remove` label is not visible.
+- **Unit tests:** pytest tests cover plan validation, issue fixture loading, and
+  report aggregation.
 
-1. Read an issue and its acceptance criteria from GitHub.
-2. Generate a structured test plan.
-3. Execute UI actions against a demo Task Manager application using Playwright.
-4. Validate the observed UI against expected behavior.
-5. Save test results, logs, generated plans, and screenshots for review.
+## Requirements
 
-## Test Results
+- Python 3.11+
+- Google Chrome installed (the runner uses Playwright `channel="chrome"`)
+- Groq or another OpenAI-compatible chat-completions API key/model
+- Network access to the public application and API
 
-The latest local test run completed with:
-
-- Total scenarios: 3
-- Passed: 3
-- Failed: 0
-
-The scenarios cover task creation, task completion, and validation of empty task names.
-
-These results are from the local demo application; they have not been independently reproduced by a reviewer.
-
-See the Markdown report, JSON report, and generated test plan:
-- `evidence/report.md`
-- `evidence/report.json`
-- `evidence/generated_plan.json`
-
-## Prerequisites
-
-- Python 3.11 or later
-- An OpenAI API key, if using the configured OpenAI model
-- GitHub access and a personal access token with read access to repository issues when testing against a private repository
-- Internet access to install dependencies and retrieve GitHub issues
-
-## Quick Start
-
-### 1. Clone the repository
+## Setup (Windows Git Bash)
 
 ```bash
-git clone https://github.com/pratheekjayashetty-ship-it/autonomous-ui-testing-agent.git
-cd autonomous-ui-testing-agent
-```
-
-### 2. Create and activate a virtual environment
-
-Windows PowerShell:
-
-```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-```
-
-macOS/Linux:
-
-```bash
-python3 -m venv .venv
-source .venv/bin/activate
-```
-
-### 3. Install dependencies
-
-```bash
+source .venv/Scripts/activate
 python -m pip install -r requirements.txt
-playwright install chromium
 ```
 
-### 4. Configure environment variables
+The runner uses your installed Google Chrome, so a Playwright Chromium download
+is not required. Playwright's Python package is still required.
 
-Copy `.env.example` to `.env` in the project root.
-
-Windows PowerShell:
-
-```powershell
-Copy-Item .env.example .env
-```
-
-macOS/Linux:
+Copy and configure environment:
 
 ```bash
 cp .env.example .env
 ```
 
-Open `.env` and fill in the values required by the implementation. For example:
+Set `OPENAI_API_KEY` in `.env`. Keep `.env` private and never commit it.
+
+Default API settings use Groq's OpenAI-compatible endpoint:
 
 ```dotenv
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_MODEL=gpt-4o-mini
-APP_URL=http://127.0.0.1:5000
-GITHUB_TOKEN=your_github_token
-GITHUB_REPOSITORY=pratheekjayashetty-ship-it/autonomous-ui-testing-agent
-GITHUB_ISSUE_NUMBER=1
+OPENAI_BASE_URL=https://api.groq.com/openai/v1
+OPENAI_MODEL=openai/gpt-oss-20b
+APP_URL=https://www.saucedemo.com/
+HEADLESS=false
 ```
 
-Use your own credentials. Never commit `.env`, API keys, or access tokens to GitHub.
-
-The GitHub token needs permission to read issues in the selected repository. If using a fine-grained personal access token, grant access to the target repository and the Issues: Read-only permission; metadata read access is also required.
-
-### 5. Start the demo application
-
-Open a terminal in the project directory, activate the virtual environment, and run:
+## Run
 
 ```bash
-python app.py
+./.venv/Scripts/python.exe -m pytest -q
+./.venv/Scripts/python.exe run_agent.py
 ```
 
-Keep this terminal running. The demo application should be available at:
+The runner uses a fresh browser context for each scenario. Each scenario must
+contain its own login and setup actions. The planner validates that every
+credential/value entered by a fill action is explicitly present in the issue
+text; invented credentials are rejected before browser execution.
 
-`http://127.0.0.1:5000`
+## Issue source
 
-### 6. Run the agent
+If `GITHUB_TOKEN`, `GITHUB_REPOSITORY`, and `GITHUB_ISSUE_NUMBER` are all set,
+the agent fetches that GitHub issue and requires the `Ready for QA` label.
+Otherwise, it loads `sample_issue.json`.
 
-Open a second terminal in the project directory, activate the same virtual environment, and run:
+The sample fixture specifies:
+- standard account for successful login
+- invalid account and exact expected error message for negative login
+- Sauce Labs Backpack for add-to-cart and cart-content checks
+- `problem_user` credentials for the Bolt T-Shirt add-to-cart regression
+The issue must state all test values and expected outcomes. The agent does not
+guess passwords, error messages, or product names. The planner requires one
+scenario for each numbered acceptance criterion and rejects incomplete plans.
+
+## Execution and guardrails
+
+- Maximum five scenarios and eight actions per scenario.
+- Each scenario runs in a fresh browser context.
+- No model tool-selection call is made for every browser action. The planner
+  returns a structured plan; the executor runs only those validated actions.
+- Semantic Playwright locators are used; ambiguous/missing controls fail closed.
+- Each scenario is independently verified from rendered text, URL, validation
+  text, or image sources.
+- Browser/API/locator errors are reported as execution errors, not application
+  defects.
+- A failed defect assertion is a candidate app defect; retain its screenshot
+  and verify it manually before reporting it to the recruiter.
+
+## Evidence
+
+Generated files are saved under `evidence/`:
+- `generated_plan.json`
+- `report.json`
+- `report.md`
+- one screenshot per scenario
+
+Do not claim a defect was reproduced unless the corresponding run's report and
+screenshot show it.
+
+## Git hygiene and suggested commits
 
 ```bash
-python run_agent.py
+git add agent/planner.py agent/browser_agent.py
+git commit -m "refactor: make planning and browser execution application-agnostic"
+
+git add run_agent.py agent/issue_source.py
+git commit -m "feat: run isolated scenarios against configurable public applications"
+
+git add tests requirements.txt
+git commit -m "test: add planner issue-loader and reporting unit tests"
+
+git add sample_issue.json README.md TEST_PLAN.md SCENARIOS.md .env.example
+git commit -m "docs: add public app and reproducible defect test fixture"
 ```
 
-The agent loads the configured GitHub issue when the required GitHub environment variables are set. Otherwise, it uses the sample issue if supported by the current configuration.
-
-Review the generated output in the `evidence/` directory.
-
-## GitHub Issue Configuration
-
-The sample issue is provided for local testing. To test with a real GitHub issue:
-
-1. Create or select an issue containing clear acceptance criteria.
-2. Configure `GITHUB_REPOSITORY`, `GITHUB_ISSUE_NUMBER`, and `GITHUB_TOKEN` in `.env`.
-3. If the implementation requires the `Ready for QA` label, apply that exact label to the issue.
-4. Run the agent and inspect the generated plan, execution results, and evidence.
-
-For private repositories, the token must have access to the target repository.
-
-## Project Structure
-
-```text
-autonomous-ui-testing-agent/
-├── agent/
-│   ├── browser_agent.py
-│   ├── issue_source.py
-│   ├── planner.py
-│   └── reporting.py
-├── evidence/
-│   ├── generated_plan.json
-│   ├── report.json
-│   ├── report.md
-│   └── [test screenshots]
-├── .env.example
-├── .gitignore
-├── app.py
-├── requirements.txt
-├── run_agent.py
-├── sample_issue.json
-├── SCENARIOS.md
-└── TEST_PLAN.md
-```
-
-The exact screenshot filenames may vary by run.
-
-## Evidence and Reports
-
-- Test report (Markdown): `evidence/report.md`
-- Test report (JSON): `evidence/report.json`
-- Generated test plan: `evidence/generated_plan.json`
-- Screenshot evidence: `evidence/`
-
-The reports capture the test outcomes and observations from the recorded run.
-
-## Guardrails and Limitations
-
-- Browser actions are intentionally bounded to the demo application's supported interactions.
-- Test outcomes depend on the issue acceptance criteria, generated plan, and actual UI behavior.
-- AI-generated plans should be reviewed for correctness and coverage.
-- A passing demo run does not establish production readiness or guarantee that every possible UI behavior has been tested.
-- API quotas, credentials, network access, or browser setup can affect execution.
-
-## Security
-
-- Keep `.env` out of version control.
-- Do not upload `.venv`, API keys, or personal access tokens.
-- Use least-privilege GitHub credentials.
-- Use a dedicated test environment for browser automation.
-- Review screenshots and reports before sharing them to ensure they contain no sensitive information.
-
-## Assignment Documentation
-
-- Test Plan: `TEST_PLAN.md`
-- Test Scenarios: `SCENARIOS.md`
-
-## Author
-
-Developed as a demonstration of AI-assisted QA automation, issue-driven test planning, Playwright UI execution, and evidence-based reporting.
+Keep `.env`, `.venv/`, `__pycache__/`, `.pytest_cache/`, and compiled Python
+files out of version control. Keep evidence reports and screenshots only after
+reviewing them for secrets or personal data.
